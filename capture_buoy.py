@@ -20,74 +20,68 @@ async def take_pdf_snapshot():
     ts = now.strftime("%Y%m%d_%H%M%S")
     out_file = os.path.join(OUT_DIR, f"buoy_{ts}.pdf")
 
-    print(f"[INFO] Capturing page at {now}")
+    print(f"[INFO] Capturing page at {now} → {out_file}")
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=[
-                "--disable-dev-shm-usage",
-                "--no-sandbox",
-                "--disable-gpu",
-            ],
+            args=["--disable-dev-shm-usage", "--no-sandbox", "--disable-gpu"],
         )
 
+        # wide viewport to ensure all 4 columns render
         context = await browser.new_context(
-            viewport={"width":1920,"height":1080},
+            viewport={"width": 2400, "height": 1400},
             user_agent=SAFARI_UA,
             ignore_https_errors=True,
             locale="en-US",
             accept_downloads=True,
         )
-
         page = await context.new_page()
 
-        # Load page with a softer wait
-        print("[STEP] Loading page (domcontentloaded)...")
-        await page.goto(
-            URL,
-            wait_until="domcontentloaded",
-            timeout=180000  # 180 seconds
-        )
+        print("[STEP] goto() …")
+        await page.goto(URL, wait_until="domcontentloaded", timeout=180000)
 
-        # Give charts/iframes a chance to render
-        print("[STEP] Waiting for render...")
-        await page.wait_for_timeout(8000)
+        # allow iframes/widgets to finish
+        print("[STEP] waiting for network idle …")
+        await page.wait_for_load_state("networkidle")
+        await page.wait_for_timeout(6000)
 
-        # Try to scroll to trigger lazy loading
-        print("[STEP] Scrolling page...")
+        # scroll down to trigger any lazy content
+        print("[STEP] scrolling …")
         try:
             scroll_height = await page.evaluate("document.body.scrollHeight")
         except Exception:
             scroll_height = 2000
-        current_y = 0
-        step = 300
-        while current_y < scroll_height:
-            await page.evaluate(f"window.scrollTo(0, {current_y});")
-            await page.wait_for_timeout(1000)
-            current_y += step
-
-        # back to top
+        y = 0
+        while y < scroll_height:
+            await page.evaluate(f"window.scrollTo(0, {y});")
+            await page.wait_for_timeout(700)
+            y += 400
         await page.evaluate("window.scrollTo(0,0);")
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(1500)
 
-        # Save PDF
-        print("[STEP] Generating PDF...")
+        # Fit width on each PDF page; paginate vertically as needed
+        content_width_px = await page.evaluate("document.documentElement.scrollWidth")
+        target_width_px = 2400
+        scale = min(1.0, target_width_px / max(content_width_px, 1))
+
+        print(f"[STEP] Generating PDF … (scale={scale:.3f}, content_width={content_width_px}px)")
         await page.pdf(
             path=out_file,
-            format="A4",
+            format="A2",
+            landscape=True,
             print_background=True,
-            margin={
-                "top": "0.5in",
-                "right": "0.5in",
-                "bottom": "0.5in",
-                "left": "0.5in"
-            },
+            margin={"top": "0.3in", "right": "0.3in", "bottom": "0.3in", "left": "0.3in"},
+            prefer_css_page_size=False,
+            scale=scale,
         )
 
         await browser.close()
 
-    print(f"[OK] Saved {out_file}")
-    # Return the file path so the workflow can use it
+    # verify file exists and is > 10 KB
+    size = os.path.getsize(out_file) if os.path.exists(out_file) else 0
+    if size < 10_000:
+        raise RuntimeError(f"PDF too small or missing: {out_file} (size={size} bytes)")
+    print(f"[OK] Saved {out_file} ({size/1024:.1f} KB)")
     return out_file
 
 async def main():
