@@ -1,7 +1,10 @@
-import os, asyncio, traceback
+import os, asyncio
 from datetime import datetime
 from playwright.async_api import async_playwright
 import pytz
+
+# 🌎 Time zone for Baton Rouge
+ZONE = pytz.timezone("America/Chicago")
 
 URL = "https://www.southeastern.edu/college-of-science-and-technology/center-for-environmental-research/lakemaurepas/buoydata/"
 OUT_DIR = "captures"
@@ -14,17 +17,21 @@ SAFARI_UA = (
 )
 
 async def take_pdf_snapshot():
-    central = pytz.timezone("America/Chicago")
-    now = datetime.now(central)
-    ts = now.strftime("%Y%m%d_%H%M%S")
-    out_file = os.path.join(OUT_DIR, f"buoy_{ts}.pdf")
+    now_local = datetime.now(ZONE)
+    ts_local = now_local.strftime("%Y%m%d_%H%M%S")
+    out_file = os.path.join(OUT_DIR, f"buoy_{ts_local}_BatonRouge.pdf")
 
-    print(f"[INFO] Capturing page at {now}")
+    print("========================================")
+    print(f"[INFO] Baton Rouge local time: {now_local.strftime('%Y-%m-%d %I:%M:%S %p %Z')}")
+    print(f"[INFO] Saving file: {out_file}")
+    print("========================================")
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
             args=["--disable-dev-shm-usage", "--no-sandbox", "--disable-gpu"],
         )
+
         context = await browser.new_context(
             viewport={"width": 2400, "height": 1400},
             user_agent=SAFARI_UA,
@@ -32,23 +39,23 @@ async def take_pdf_snapshot():
             locale="en-US",
             accept_downloads=True,
         )
-        page = await context.new_page()
 
-        print("[STEP] Loading page…")
+        page = await context.new_page()
         await page.goto(URL, wait_until="domcontentloaded", timeout=180000)
         await page.wait_for_timeout(8000)
 
-        print("[STEP] Scrolling to render all elements…")
+        # Scroll down to trigger all chart loading
         scroll_height = await page.evaluate("document.body.scrollHeight")
         y = 0
         while y < scroll_height:
             await page.evaluate(f"window.scrollTo(0, {y});")
-            await page.wait_for_timeout(1000)
-            y += 300
+            await page.wait_for_timeout(800)
+            y += 400
+
         await page.evaluate("window.scrollTo(0, 0);")
         await page.wait_for_timeout(2000)
 
-        print("[STEP] Generating PDF…")
+        # Save as PDF (A2 landscape)
         await page.pdf(
             path=out_file,
             format="A2",
@@ -59,7 +66,7 @@ async def take_pdf_snapshot():
 
         await browser.close()
 
-    print(f"[OK] Saved {out_file}")
+    print(f"[OK] PDF saved successfully → {out_file}")
     return out_file
 
 async def main():
