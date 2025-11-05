@@ -1,9 +1,9 @@
 name: Buoy capture (beginner-friendly)
 
 on:
-  workflow_dispatch:      # manual run button
+  workflow_dispatch:      # manual run
   schedule:
-    - cron: "0 * * * *"   # optional: hourly (UTC)
+    - cron: "0 * * * *"   # hourly (UTC) — optional
 
 jobs:
   capture:
@@ -14,6 +14,14 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
+
+      - name: Verify script exists
+        run: |
+          echo "Working directory:"
+          pwd
+          echo "Repo contents:"
+          ls -lah
+          test -f capture_buoy.py || (echo "ERROR: capture_buoy.py not found at repo root" && exit 1)
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -37,9 +45,10 @@ jobs:
         run: |
           mkdir -p captures
           python capture_buoy.py
+          echo "Generated files:"
           ls -lh captures || true
 
-      - name: Upload artifact
+      - name: Upload PDF artifact
         uses: actions/upload-artifact@v4
         with:
           name: buoy-captures
