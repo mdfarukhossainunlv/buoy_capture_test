@@ -2,8 +2,8 @@ name: Buoy capture (Baton Rouge local, 24-hour)
 
 on:
   schedule:
-    - cron: "0 * * * *"   # every hour, UTC-based trigger
-  workflow_dispatch:      # allows manual run
+    - cron: "0 * * * *"   # every hour (UTC)
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -49,13 +49,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           if [ ! -d "captures" ]; then
             echo "captures folder not found"
             exit 0
           fi
 
           shopt -s nullglob
-          mapfile -t files < <(ls -1t captures/*.pdf 2>/dev/null || true)
+          mapfile -t files < <(ls -1t captures/*.pdf)
 
           count="${#files[@]}"
           echo "Found $count PDF files in captures/"
@@ -65,7 +66,6 @@ jobs:
             exit 0
           fi
 
-          # Delete everything after the first 1000 newest files
           for f in "${files[@]:1000}"; do
             rm -f "$f"
           done
@@ -77,19 +77,19 @@ jobs:
           git config user.name "buoy-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Commit and push PDFs if changed
+      - name: Commit changes if needed
         id: commit_step
         run: |
-          git add captures/*.pdf 2>/dev/null || true
+          git add captures/*.pdf || true
           if git diff --cached --quiet; then
             echo "changed=false" >> $GITHUB_OUTPUT
             echo "No changes to commit."
           else
-            git commit -m "Add buoy snapshot (and cleanup old)"
+            git commit -m "Add buoy snapshot and cleanup old files"
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Pull latest (rebase) to avoid push conflict
+      - name: Pull latest (rebase)
         if: steps.commit_step.outputs.changed == 'true'
         run: |
           git fetch origin main
