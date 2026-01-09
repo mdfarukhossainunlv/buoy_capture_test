@@ -174,7 +174,11 @@ async def take_capture():
         await wait_dom_complete(page)
 
         print("[STEP] network idle …")
+        try:
         await wait_network_idle(page)
+        except Exception as e:
+        print(f"[WARN] networkidle not reached, continuing (common on dynamic pages): {e}")
+        await page.wait_for_load_state("load", timeout=60000)
 
         print("[STEP] initial settle 2s …")
         await page.wait_for_timeout(2000)
